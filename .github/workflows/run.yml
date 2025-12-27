@@ -34,7 +34,7 @@ jobs:
         DIS_EMAIL: ${{ secrets.DIS_EMAIL }}
         DIS_PASSWORD: ${{ secrets.DIS_PASSWORD }}
         DIS_SECRET: ${{ secrets.DIS_SECRET }}
-      run: python main.py
+      run: python -u main.py
 
     # 只要有任何图片生成，都上传给我看
     - name: Upload Screenshots
