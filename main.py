@@ -9,12 +9,14 @@ DISCORD_PASSWORD = os.environ["DIS_PASSWORD"]
 TWO_FA_SECRET = os.environ["DIS_SECRET"].replace(" ", "")
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
+# 直接定义目标服务器地址，跳过中间点击步骤
+TARGET_SERVER_URL = "https://hub.weirdhost.xyz/server/10a4aaad"
 HOME_URL = "https://hub.weirdhost.xyz/"
 
-def run_cloud_force():
-    print("🚀 [暴力点击版] 启动自动续费...")
+def run_cloud_fast():
+    print("🚀 [极速直达版] 启动自动续费...")
     with sync_playwright() as p:
-        # 启动浏览器 (Headless模式, 1920x1080大屏)
+        # 启动浏览器
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
             viewport={'width': 1920, 'height': 1080},
@@ -28,7 +30,8 @@ def run_cloud_force():
         try:
             print("1. 访问登录页...")
             page.goto(LOGIN_URL, timeout=60000)
-            page.wait_for_load_state("networkidle")
+            # 改为 domcontentloaded，不等动态资源
+            page.wait_for_load_state("domcontentloaded") 
             
             # --- 登录流程 ---
             if "login" in page.url:
@@ -39,69 +42,25 @@ def run_cloud_force():
                     checkbox = page.locator("input[type='checkbox']")
                     if checkbox.count() > 0:
                         checkbox.check(force=True)
-                        print("   -> 条款已勾选")
                 except:
                     pass
 
-                # 🔥🔥🔥 暴力点击 Discord 按钮逻辑 🔥🔥🔥
-                print("   -> 尝试点击 Discord 按钮...")
-                clicked = False
-                
-                # 方案A: 找链接 (通常最稳)
-                if not clicked:
-                    try:
-                        print("   -> [尝试A] 寻找 href 包含 discord 的链接...")
-                        btn = page.locator("a[href*='discord']").first
-                        if btn.is_visible():
-                            btn.click(timeout=3000)
-                            clicked = True
-                            print("   -> 成功点击链接！")
-                    except:
-                        pass
-                
-                # 方案B: 找韩文关键字 (模糊匹配)
-                if not clicked:
-                    try:
-                        print("   -> [尝试B] 寻找包含 '디스코드' 的元素...")
-                        # 只要包含这几个字就点
-                        page.get_by_text("디스코드", exact=False).last.click(timeout=3000)
-                        clicked = True
-                        print("   -> 成功点击韩文文本！")
-                    except:
-                        pass
-                
-                # 方案C: 找 'Discord' 英文
-                if not clicked:
-                    try:
-                        print("   -> [尝试C] 寻找 'Discord' 英文...")
-                        page.get_by_text("Discord", exact=False).last.click(timeout=3000)
-                        clicked = True
-                    except:
-                        pass
-                
-                # 方案D: 盲点最后一个按钮 (终极方案)
-                if not clicked:
-                    print("   -> [尝试D] 点击页面上最后一个按钮...")
-                    try:
-                        # 既然是登录页，最后一个大按钮通常就是第三方登录
-                        buttons = page.locator("button, .btn, div[role='button']")
-                        count = buttons.count()
-                        if count > 0:
-                            buttons.nth(count - 1).click(force=True)
-                            print("   -> 已点击最后一个按钮")
-                        else:
-                            print("   -> 😱 没找到任何按钮！")
-                    except:
-                        pass
-
-                # --- 后续流程 ---
-                print("3. 等待 Discord 页面加载...")
+                # 点击 Discord 按钮 (混合策略)
+                print("   -> 点击 Discord 登录按钮...")
                 try:
-                    # 等待 URL 变化
-                    page.wait_for_url(lambda url: "discord" in url or "weirdhost" in url, timeout=15000)
+                    # 优先找链接
+                    page.click("a[href*='discord']", timeout=5000)
                 except:
-                    print("   ⚠️ 警告: URL 未变化，可能点击失败或已登录")
+                    try:
+                        # 其次找按钮文字
+                        page.click("text=Discord", timeout=5000)
+                    except:
+                        # 最后盲点最后一个按钮
+                        buttons = page.locator("button, .btn, div[role='button']")
+                        if buttons.count() > 0:
+                            buttons.last.click(force=True)
 
+                print("3. 等待 Discord 页面...")
                 page.wait_for_load_state("domcontentloaded")
 
                 # 处理 APP 弹窗
@@ -114,7 +73,7 @@ def run_cloud_force():
                     page.fill("input[name='email']", DISCORD_EMAIL)
                     page.fill("input[name='password']", DISCORD_PASSWORD)
                     page.click("button[type='submit']")
-                    page.wait_for_timeout(3000)
+                    page.wait_for_timeout(2000)
 
                 # 2FA
                 if page.locator("input[autocomplete='one-time-code']").count() > 0:
@@ -122,7 +81,7 @@ def run_cloud_force():
                     totp = pyotp.TOTP(TWO_FA_SECRET)
                     page.fill("input[autocomplete='one-time-code']", totp.now())
                     page.click("button[type='submit']")
-                    page.wait_for_timeout(3000)
+                    page.wait_for_timeout(2000)
 
                 # 授权
                 auth_btn = page.locator("button:has-text('Authorize'), button:has-text('授权'), button:has-text('승인')").last
@@ -130,59 +89,46 @@ def run_cloud_force():
                     print("   -> 点击授权...")
                     auth_btn.click()
             
-            print("4. 等待跳转回主页...")
+            # --- 关键修改：直接跳转到服务器页面 ---
+            print("4. 等待登录完成...")
+            # 只要 URL 变了或者离开了登录页就算成功，不等完全加载
             try:
-                page.wait_for_url(lambda url: "weirdhost.xyz" in url and "login" not in url, timeout=60000)
+                page.wait_for_url(lambda url: "login" not in url, timeout=30000)
             except:
-                print("   -> 跳转超时，强制进入主页")
-                page.goto(HOME_URL)
+                print("   -> 等待跳转超时，尝试强制直连...")
 
-            # --- 导航流程 ---
-            print("5. 导航到服务器页...")
-            if page.url != HOME_URL:
-                page.goto(HOME_URL)
-                page.wait_for_load_state("networkidle")
-
-            # 点击 '서버'
-            print("   -> 点击服务器标签...")
-            try:
-                page.locator("span:text-is('서버'), div:has-text('서버')").first.click()
-            except:
-                page.goto(HOME_URL + "/server/10a4aaad") # 备用直连
-
-            # 点击目标服务器
-            print("   -> 点击目标服务器...")
-            try:
-                target_server = page.locator("a[href*='/server/10a4aaad']").first
-                target_server.wait_for(state="visible", timeout=10000)
-                target_server.click()
-            except:
-                pass
-            
-            page.wait_for_load_state("networkidle")
+            print(f"5. 🚀 直飞目标服务器: {TARGET_SERVER_URL}")
+            page.goto(TARGET_SERVER_URL)
+            # 只等待 DOM 结构加载完成，不再等 networkidle
+            page.wait_for_load_state("domcontentloaded")
 
             # --- 续费流程 ---
             print("6. 寻找续费按钮...")
-            # 同样使用包含匹配，更稳
             try:
+                # 寻找包含“시간추가”的 span 元素
                 renew_btn = page.locator("span").filter(has_text="시간추가").first
+                
+                # 等待它出现 (最多30秒)
                 renew_btn.wait_for(state="visible", timeout=30000) 
+                
+                # 滚动到可见区域并点击
                 renew_btn.scroll_into_view_if_needed()
                 print("   -> 点击续费按钮...")
                 renew_btn.click()
                 
                 # 检查结果
                 try:
+                    # 检测红色错误提示
                     error_msg = page.locator("text=You can't renew")
                     error_msg.wait_for(state="visible", timeout=5000)
                     print("❌ [结果] 还没到续费时间")
                 except:
                     print("✅ [结果] 续费成功")
+                    
             except Exception as e:
-                print(f"❌ 找不到续费按钮: {e}")
-                # 如果没找到按钮，可能已经在服务器页了，再试一次直连
-                if "server" in page.url:
-                     print("   -> 尝试备用方案...")
+                # 如果找不到按钮，可能是页面还在加载数据，截图看看
+                print(f"❌ 找不到续费按钮 (可能页面动态数据未加载完): {e}")
+                raise e
 
         except Exception as e:
             print(f"❌ 运行出错: {e}")
@@ -193,4 +139,4 @@ def run_cloud_force():
             browser.close()
 
 if __name__ == "__main__":
-    run_cloud_force()
+    run_cloud_fast()
