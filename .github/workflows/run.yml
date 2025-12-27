@@ -1,9 +1,9 @@
 name: Auto Renew (Visual Debug)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动点击运行
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 1 * * *' # 每天运行一次
 
 jobs:
   debug_screenshots:
@@ -13,34 +13,37 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 安装字体 (必须保留，防止乱码)
+    # 1. 安装字体 (解决乱码)
     - name: Install System Fonts
       run: |
         sudo apt-get update
         sudo apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
 
+    # 2. 准备 Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
+    # 3. 安装依赖
     - name: Install dependencies
       run: |
         pip install playwright pyotp
         playwright install chromium
 
+    # 4. 运行脚本
     - name: Run script
       env:
         DIS_EMAIL: ${{ secrets.DIS_EMAIL }}
         DIS_PASSWORD: ${{ secrets.DIS_PASSWORD }}
         DIS_SECRET: ${{ secrets.DIS_SECRET }}
-      run: python -u main.py
+      run: python main.py
 
-    # 🔥🔥🔥 关键修改：无论成功失败，都上传所有 PNG 图片 🔥🔥🔥
+    # 5. 上传截图 (无论成功失败)
     - name: Upload Debug Screenshots
-      if: always() # 即使脚本报错退出，也会运行这一步
+      if: always()
       uses: actions/upload-artifact@v4
       with:
         name: debug-screenshots
-        path: *.png # 上传当前目录下所有的 png 图片
+        path: "*.png" # 这里的 *.png 加上了引号，防止解析错误
         retention-days: 3
