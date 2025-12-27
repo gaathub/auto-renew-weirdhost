@@ -11,24 +11,19 @@ TWO_FA_SECRET = os.environ["DIS_SECRET"].replace(" ", "")
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 TARGET_SERVER_URL = "https://hub.weirdhost.xyz/server/10a4aaad"
 
-def run_cloud_fixed():
-    print("🚀 [云端修复版] 启动...")
+def run_must_fill():
+    print("🚀 [死磕填表版] 启动...")
     with sync_playwright() as p:
-        # --- 🔥 核心修复：云端必须是 headless=True ---
-        # 只有在本地电脑测试时才能用 False
+        # 云端必须 headless=True
         browser = p.chromium.launch(
-            headless=True, 
-            args=["--disable-blink-features=AutomationControlled"] # 反检测参数
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
         )
-        
-        # 伪装成普通 Windows 浏览器的 User-Agent
         context = browser.new_context(
             viewport={'width': 1920, 'height': 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
-        
         page = context.new_page()
-        # 拦截 Discord APP 唤起
         page.route("**/*", lambda route: route.abort() if "discord://" in route.request.url else route.continue_())
 
         try:
@@ -36,11 +31,9 @@ def run_cloud_fixed():
             print("1️⃣ 访问登录页...")
             page.goto(LOGIN_URL, timeout=60000)
             
-            # 判断是否需要登录
             if "login" in page.url:
-                print("   -> 正在登录...")
-                
-                # [A] 勾选条款
+                print("   -> 正在处理前置操作...")
+                # 勾选条款
                 try:
                     checkbox = page.locator("input[type='checkbox']")
                     if checkbox.count() > 0 and not checkbox.is_checked():
@@ -49,7 +42,7 @@ def run_cloud_fixed():
                 except:
                     pass
 
-                # [B] 点击 Discord
+                # 点击 Discord
                 print("   -> 点击 Discord 按钮...")
                 discord_btn = page.locator("a[href*='discord']").first
                 if not discord_btn.is_visible():
@@ -57,64 +50,86 @@ def run_cloud_fixed():
                 
                 discord_btn.click()
                 
-                # 等待跳转
+                # 死等跳转到 Discord 域名
+                print("   -> 等待跳转至 Discord...")
                 try:
                     page.wait_for_url(lambda url: "discord.com" in url, timeout=30000)
-                    print("   -> 已跳转 Discord")
+                    print("   -> ✅ 已抵达 Discord 页面")
                 except:
-                    print("   ❌ 跳转 Discord 失败")
-                    raise Exception("Discord Jump Failed")
+                    print("   ❌ 跳转失败")
+                    raise Exception("Jump Failed")
 
-                # [C] Discord 验证
+                # ==========================================
+                # 🔥 核心修正：死等输入框，绝对不跳过 🔥
+                # ==========================================
+                print("2️⃣ Discord 身份验证...")
                 page.wait_for_load_state("domcontentloaded")
-                time.sleep(2)
                 
-                # 截图：看看是不是有人机验证
-                page.screenshot(path="01_discord_check.png") 
-
-                # 填账号
-                if page.locator("input[name='email']").is_visible():
-                    print("   -> 输入账号密码...")
-                    page.fill("input[name='email']", DISCORD_EMAIL)
-                    page.fill("input[name='password']", DISCORD_PASSWORD)
-                    page.click("button[type='submit']")
+                # 寻找邮箱输入框 (最长等 20秒)
+                print("   -> 正在寻找账号输入框 (死等模式)...")
+                try:
+                    # 这里的 wait_for 是关键！找不到它会一直等，直到报错，绝不跳过
+                    email_input = page.locator("input[name='email']")
+                    email_input.wait_for(state="visible", timeout=20000)
+                    
+                    print("   -> ✅ 找到输入框，开始填写...")
+                    email_input.fill(DISCORD_EMAIL)
+                    page.locator("input[name='password']").fill(DISCORD_PASSWORD)
+                    page.locator("button[type='submit']").click()
+                    print("   -> 账号密码已提交！")
+                    
+                    # 提交后截图，确认是否出现验证码或2FA
                     time.sleep(3)
-                
-                # 检查是否出现 hCaptcha (云端最容易挂在这里)
-                if page.locator("iframe[src*='hcaptcha']").count() > 0:
-                    print("❌❌❌ 遭遇 hCaptcha 验证码！云端无法通过！")
-                    print("建议：在本地运行提取 storage_state.json 上传到云端。")
-                    page.screenshot(path="captcha_block.png")
-                    raise Exception("Blocked by Captcha")
+                    page.screenshot(path="01_after_submit.png")
+                    
+                except Exception as e:
+                    print(f"   ❌ 致命错误：找不到输入框！页面可能未加载或被拦截。")
+                    page.screenshot(path="debug_no_input.png")
+                    raise e
 
-                # 2FA
-                if page.locator("input[autocomplete='one-time-code']").count() > 0:
-                    print("   -> 输入 2FA...")
+                # --- 处理 2FA (双重验证) ---
+                # 你提到是两步验证，这里会检测
+                print("   -> 检查 2FA...")
+                try:
+                    # 等待一下看会不会出现 2FA 框
+                    otp_input = page.locator("input[autocomplete='one-time-code']")
+                    # 给它 5 秒钟出现时间，如果没有就假设不需要
+                    otp_input.wait_for(state="visible", timeout=5000)
+                    
+                    print("   -> 🔐 检测到 2FA 请求，正在计算验证码...")
                     totp = pyotp.TOTP(TWO_FA_SECRET)
-                    page.fill("input[autocomplete='one-time-code']", totp.now())
-                    page.click("button[type='submit']")
+                    code = totp.now()
+                    print(f"      Code: {code}")
+                    otp_input.fill(code)
+                    page.locator("button[type='submit']").click()
+                    print("   -> 2FA 已提交")
                     time.sleep(3)
+                except:
+                    print("   -> 未检测到 2FA (或已跳过)")
 
-                # 授权
+                # --- 检查授权 ---
+                print("   -> 检查授权按钮...")
                 try:
                     auth_btn = page.locator("button:has-text('Authorize'), button:has-text('授权'), button:has-text('승인')").last
-                    auth_btn.wait_for(state="visible", timeout=5000)
+                    # 等待按钮可见
+                    auth_btn.wait_for(state="visible", timeout=8000)
                     auth_btn.click()
-                    print("   -> 点击授权")
+                    print("   -> ✅ 点击授权")
                 except:
-                    pass
+                    print("   -> 未发现授权按钮，跳过")
 
-                # 等待跳回
-                print("⏳ 等待回调...")
+                # 等待回调
+                print("⏳ 等待跳转回 WeirdHost...")
                 try:
                     page.wait_for_url(lambda url: "weirdhost.xyz" in url and "discord" not in url, timeout=60000)
+                    print("   -> ✅ 回调成功")
                 except:
-                    print("   ❌ 回调超时")
-                    page.screenshot(path="callback_fail.png")
+                    print("   ❌ 回调超时 (可能卡在 Discord 页面)")
+                    page.screenshot(path="callback_timeout.png")
                     raise Exception("Callback Timeout")
 
-            # 2. 续费
-            print("2️⃣ 前往服务器页...")
+            # 3. 续费
+            print("3️⃣ 前往服务器页...")
             page.goto(TARGET_SERVER_URL)
             page.wait_for_load_state("domcontentloaded")
 
@@ -123,7 +138,7 @@ def run_cloud_fixed():
                 page.screenshot(path="session_lost.png")
                 raise Exception("Login Failed")
 
-            print("3️⃣ 点击续费...")
+            print("4️⃣ 点击续费...")
             try:
                 renew_btn = page.locator("span:has-text('시간추가')").first
                 renew_btn.wait_for(state="visible", timeout=20000)
@@ -139,16 +154,4 @@ def run_cloud_fixed():
 
             except Exception as e:
                 print(f"   ❌ 没找到按钮: {e}")
-                page.screenshot(path="no_button.png")
-                raise e
-
-        except Exception as e:
-            print(f"💥 运行错误: {e}")
-            page.screenshot(path="crash.png")
-            raise e
-
-        finally:
-            browser.close()
-
-if __name__ == "__main__":
-    run_cloud_fixed()
+                page.screenshot
