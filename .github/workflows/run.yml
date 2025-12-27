@@ -1,37 +1,34 @@
-name: Auto Renew (Visual Debug)
+name: Auto Renew (Strict Login)
 
 on:
-  workflow_dispatch: # 允许手动点击运行
+  workflow_dispatch:
   schedule:
-    - cron: '0 1 * * *' # 每天运行一次
+    - cron: '0 1 * * *'
 
 jobs:
-  debug_screenshots:
+  run_strict:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 1. 安装字体 (解决乱码)
+    # 安装字体 (防止方框乱码)
     - name: Install System Fonts
       run: |
         sudo apt-get update
         sudo apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
 
-    # 2. 准备 Python
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
-    # 3. 安装依赖
     - name: Install dependencies
       run: |
         pip install playwright pyotp
         playwright install chromium
 
-    # 4. 运行脚本
     - name: Run script
       env:
         DIS_EMAIL: ${{ secrets.DIS_EMAIL }}
@@ -39,11 +36,11 @@ jobs:
         DIS_SECRET: ${{ secrets.DIS_SECRET }}
       run: python main.py
 
-    # 5. 上传截图 (无论成功失败)
-    - name: Upload Debug Screenshots
+    # 只要有任何图片生成，都上传给我看
+    - name: Upload Screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: debug-screenshots
-        path: "*.png" # 这里的 *.png 加上了引号，防止解析错误
+        name: debug-evidence
+        path: "*.png"
         retention-days: 3
