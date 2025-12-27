@@ -11,8 +11,8 @@ TWO_FA_SECRET = os.environ["DIS_SECRET"].replace(" ", "")
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 HOME_URL = "https://hub.weirdhost.xyz/"
 
-def run_cloud_final():
-    print("🚀 [最终版] 启动自动续费...")
+def run_cloud_force():
+    print("🚀 [暴力点击版] 启动自动续费...")
     with sync_playwright() as p:
         # 启动浏览器 (Headless模式, 1920x1080大屏)
         browser = p.chromium.launch(headless=True)
@@ -28,25 +28,81 @@ def run_cloud_final():
         try:
             print("1. 访问登录页...")
             page.goto(LOGIN_URL, timeout=60000)
+            page.wait_for_load_state("networkidle")
             
             # --- 登录流程 ---
             if "login" in page.url:
                 print("2. 开始登录流程...")
-                # 勾选条款 (强制执行)
-                if page.locator("input[type='checkbox']").count() > 0:
-                    page.locator("input[type='checkbox']").check(force=True)
                 
-                # 🔥 修改点：优先通过链接点击 (防止字体乱码找不到文字)
-                print("   -> 点击 Discord 登录按钮...")
+                # 勾选条款
                 try:
-                    # 找包含 discord 的链接直接点，不依赖韩文文本
-                    page.click("a[href*='discord']", timeout=5000)
+                    checkbox = page.locator("input[type='checkbox']")
+                    if checkbox.count() > 0:
+                        checkbox.check(force=True)
+                        print("   -> 条款已勾选")
                 except:
-                    # 如果找不到链接，再尝试找按钮
-                    page.click("button", has_text="Discord", timeout=5000)
+                    pass
 
+                # 🔥🔥🔥 暴力点击 Discord 按钮逻辑 🔥🔥🔥
+                print("   -> 尝试点击 Discord 按钮...")
+                clicked = False
+                
+                # 方案A: 找链接 (通常最稳)
+                if not clicked:
+                    try:
+                        print("   -> [尝试A] 寻找 href 包含 discord 的链接...")
+                        btn = page.locator("a[href*='discord']").first
+                        if btn.is_visible():
+                            btn.click(timeout=3000)
+                            clicked = True
+                            print("   -> 成功点击链接！")
+                    except:
+                        pass
+                
+                # 方案B: 找韩文关键字 (模糊匹配)
+                if not clicked:
+                    try:
+                        print("   -> [尝试B] 寻找包含 '디스코드' 的元素...")
+                        # 只要包含这几个字就点
+                        page.get_by_text("디스코드", exact=False).last.click(timeout=3000)
+                        clicked = True
+                        print("   -> 成功点击韩文文本！")
+                    except:
+                        pass
+                
+                # 方案C: 找 'Discord' 英文
+                if not clicked:
+                    try:
+                        print("   -> [尝试C] 寻找 'Discord' 英文...")
+                        page.get_by_text("Discord", exact=False).last.click(timeout=3000)
+                        clicked = True
+                    except:
+                        pass
+                
+                # 方案D: 盲点最后一个按钮 (终极方案)
+                if not clicked:
+                    print("   -> [尝试D] 点击页面上最后一个按钮...")
+                    try:
+                        # 既然是登录页，最后一个大按钮通常就是第三方登录
+                        buttons = page.locator("button, .btn, div[role='button']")
+                        count = buttons.count()
+                        if count > 0:
+                            buttons.nth(count - 1).click(force=True)
+                            print("   -> 已点击最后一个按钮")
+                        else:
+                            print("   -> 😱 没找到任何按钮！")
+                    except:
+                        pass
+
+                # --- 后续流程 ---
                 print("3. 等待 Discord 页面加载...")
-                page.wait_for_load_state("networkidle")
+                try:
+                    # 等待 URL 变化
+                    page.wait_for_url(lambda url: "discord" in url or "weirdhost" in url, timeout=15000)
+                except:
+                    print("   ⚠️ 警告: URL 未变化，可能点击失败或已登录")
+
+                page.wait_for_load_state("domcontentloaded")
 
                 # 处理 APP 弹窗
                 if page.locator("button:has-text('继续使用')").count() > 0:
@@ -88,34 +144,45 @@ def run_cloud_final():
                 page.wait_for_load_state("networkidle")
 
             # 点击 '서버'
-            page.locator("span:text-is('서버'), div:has-text('서버')").first.click()
+            print("   -> 点击服务器标签...")
+            try:
+                page.locator("span:text-is('서버'), div:has-text('서버')").first.click()
+            except:
+                page.goto(HOME_URL + "/server/10a4aaad") # 备用直连
+
+            # 点击目标服务器
+            print("   -> 点击目标服务器...")
+            try:
+                target_server = page.locator("a[href*='/server/10a4aaad']").first
+                target_server.wait_for(state="visible", timeout=10000)
+                target_server.click()
+            except:
+                pass
             
-            # 点击目标服务器 (通过链接找，防止乱码)
-            target_server = page.locator("a[href*='/server/10a4aaad']").first
-            target_server.wait_for(state="visible", timeout=10000)
-            target_server.click()
             page.wait_for_load_state("networkidle")
 
             # --- 续费流程 ---
             print("6. 寻找续费按钮...")
-            # 这里必须依赖字体，所以下面的 run.yml 修改至关重要
-            renew_btn = page.locator("span:has-text('시간추가')").first
-            
-            # 等待按钮可见 (最长30秒)
-            renew_btn.wait_for(state="visible", timeout=30000) 
-            renew_btn.scroll_into_view_if_needed()
-            
-            print("   -> 点击续费按钮...")
-            renew_btn.click()
-            
-            # 检查结果
+            # 同样使用包含匹配，更稳
             try:
-                # 检测红色错误提示
-                error_msg = page.locator("text=You can't renew")
-                error_msg.wait_for(state="visible", timeout=5000)
-                print("❌ [结果] 还没到续费时间")
-            except:
-                print("✅ [结果] 续费成功 (未检测到错误)")
+                renew_btn = page.locator("span").filter(has_text="시간추가").first
+                renew_btn.wait_for(state="visible", timeout=30000) 
+                renew_btn.scroll_into_view_if_needed()
+                print("   -> 点击续费按钮...")
+                renew_btn.click()
+                
+                # 检查结果
+                try:
+                    error_msg = page.locator("text=You can't renew")
+                    error_msg.wait_for(state="visible", timeout=5000)
+                    print("❌ [结果] 还没到续费时间")
+                except:
+                    print("✅ [结果] 续费成功")
+            except Exception as e:
+                print(f"❌ 找不到续费按钮: {e}")
+                # 如果没找到按钮，可能已经在服务器页了，再试一次直连
+                if "server" in page.url:
+                     print("   -> 尝试备用方案...")
 
         except Exception as e:
             print(f"❌ 运行出错: {e}")
@@ -126,4 +193,4 @@ def run_cloud_final():
             browser.close()
 
 if __name__ == "__main__":
-    run_cloud_final()
+    run_cloud_force()
