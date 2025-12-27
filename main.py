@@ -3,20 +3,18 @@ import time
 import pyotp
 from playwright.sync_api import sync_playwright
 
-# --- 环境变量获取 ---
+# --- 环境变量 ---
 DISCORD_EMAIL = os.environ["DIS_EMAIL"]
 DISCORD_PASSWORD = os.environ["DIS_PASSWORD"]
 TWO_FA_SECRET = os.environ["DIS_SECRET"].replace(" ", "")
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
-# 直接定义目标服务器地址，跳过中间点击步骤
 TARGET_SERVER_URL = "https://hub.weirdhost.xyz/server/10a4aaad"
-HOME_URL = "https://hub.weirdhost.xyz/"
 
-def run_cloud_fast():
-    print("🚀 [极速直达版] 启动自动续费...")
+def run_debug_visual():
+    print("🚀 [全程监控版] 启动...")
     with sync_playwright() as p:
-        # 启动浏览器
+        # 启动浏览器 (1920x1080)
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(
             viewport={'width': 1920, 'height': 1080},
@@ -28,115 +26,106 @@ def run_cloud_fast():
         page.route("**/*", lambda route: route.abort() if "discord://" in route.request.url else route.continue_())
 
         try:
-            print("1. 访问登录页...")
+            # --- 1. 访问登录页 ---
+            print("📸 [1] 正在访问登录页...")
             page.goto(LOGIN_URL, timeout=60000)
-            # 改为 domcontentloaded，不等动态资源
-            page.wait_for_load_state("domcontentloaded") 
+            page.wait_for_load_state("domcontentloaded")
+            page.screenshot(path="01_login_page.png") # 截图1: 初始页面
             
-            # --- 登录流程 ---
             if "login" in page.url:
-                print("2. 开始登录流程...")
+                print("   -> 检测到登录页，开始登录流程")
                 
                 # 勾选条款
                 try:
-                    checkbox = page.locator("input[type='checkbox']")
-                    if checkbox.count() > 0:
-                        checkbox.check(force=True)
+                    page.locator("input[type='checkbox']").check(force=True)
                 except:
                     pass
 
-                # 点击 Discord 按钮 (混合策略)
-                print("   -> 点击 Discord 登录按钮...")
+                # 点击 Discord 按钮
+                print("   -> 点击 Discord 按钮...")
                 try:
-                    # 优先找链接
                     page.click("a[href*='discord']", timeout=5000)
                 except:
-                    try:
-                        # 其次找按钮文字
-                        page.click("text=Discord", timeout=5000)
-                    except:
-                        # 最后盲点最后一个按钮
-                        buttons = page.locator("button, .btn, div[role='button']")
-                        if buttons.count() > 0:
-                            buttons.last.click(force=True)
-
-                print("3. 等待 Discord 页面...")
+                    # 备用点击
+                    buttons = page.locator("button, .btn, div[role='button']")
+                    if buttons.count() > 0:
+                        buttons.last.click(force=True)
+                
+                # --- 2. Discord 页面 ---
+                print("📸 [2] 等待 Discord 加载...")
                 page.wait_for_load_state("domcontentloaded")
-
+                time.sleep(3) # 稍微等一下让页面渲染
+                page.screenshot(path="02_discord_page.png") # 截图2: Discord 页面长啥样
+                
                 # 处理 APP 弹窗
                 if page.locator("button:has-text('继续使用')").count() > 0:
                     page.locator("button:has-text('继续使用')").click()
 
                 # 填写账号
                 if page.locator("input[name='email']").is_visible():
-                    print("   -> 输入账号密码...")
+                    print("   -> 填写账号密码...")
                     page.fill("input[name='email']", DISCORD_EMAIL)
                     page.fill("input[name='password']", DISCORD_PASSWORD)
                     page.click("button[type='submit']")
-                    page.wait_for_timeout(2000)
+                    time.sleep(3)
 
                 # 2FA
                 if page.locator("input[autocomplete='one-time-code']").count() > 0:
-                    print("   -> 输入 2FA...")
+                    print("   -> 填写 2FA...")
                     totp = pyotp.TOTP(TWO_FA_SECRET)
                     page.fill("input[autocomplete='one-time-code']", totp.now())
                     page.click("button[type='submit']")
-                    page.wait_for_timeout(2000)
+                    time.sleep(3)
 
                 # 授权
                 auth_btn = page.locator("button:has-text('Authorize'), button:has-text('授权'), button:has-text('승인')").last
                 if auth_btn.count() > 0:
                     print("   -> 点击授权...")
                     auth_btn.click()
+                    time.sleep(5)
             
-            # --- 关键修改：直接跳转到服务器页面 ---
-            print("4. 等待登录完成...")
-            # 只要 URL 变了或者离开了登录页就算成功，不等完全加载
-            try:
-                page.wait_for_url(lambda url: "login" not in url, timeout=30000)
-            except:
-                print("   -> 等待跳转超时，尝试强制直连...")
-
-            print(f"5. 🚀 直飞目标服务器: {TARGET_SERVER_URL}")
-            page.goto(TARGET_SERVER_URL)
-            # 只等待 DOM 结构加载完成，不再等 networkidle
+            # --- 3. 登录后状态检查 ---
+            print("📸 [3] 登录操作结束，检查当前状态...")
             page.wait_for_load_state("domcontentloaded")
+            page.screenshot(path="03_after_login.png") # 截图3: 登录完是什么页面？
+            
+            print(f"   -> 当前 URL: {page.url}")
 
-            # --- 续费流程 ---
-            print("6. 寻找续费按钮...")
+            # --- 4. 强制前往服务器 ---
+            print(f"🚀 [4] 前往服务器页面: {TARGET_SERVER_URL}")
+            page.goto(TARGET_SERVER_URL)
+            page.wait_for_load_state("domcontentloaded")
+            time.sleep(5) # 给它5秒加载时间
+            
+            print("📸 [5] 到达服务器页，截图留念...")
+            page.screenshot(path="04_server_page.png") # 截图4: 服务器页面到底加载出来没？
+
+            # --- 5. 寻找续费按钮 ---
+            print("🔍 [6] 寻找续费按钮...")
             try:
-                # 寻找包含“시간추가”的 span 元素
+                # 寻找 span
                 renew_btn = page.locator("span").filter(has_text="시간추가").first
-                
-                # 等待它出现 (最多30秒)
-                renew_btn.wait_for(state="visible", timeout=30000) 
-                
-                # 滚动到可见区域并点击
-                renew_btn.scroll_into_view_if_needed()
-                print("   -> 点击续费按钮...")
-                renew_btn.click()
-                
-                # 检查结果
-                try:
-                    # 检测红色错误提示
-                    error_msg = page.locator("text=You can't renew")
-                    error_msg.wait_for(state="visible", timeout=5000)
-                    print("❌ [结果] 还没到续费时间")
-                except:
-                    print("✅ [结果] 续费成功")
-                    
+                if renew_btn.is_visible():
+                    renew_btn.click()
+                    print("✅ 按钮点击成功！")
+                    page.screenshot(path="05_success.png")
+                else:
+                    print("⚠️ 按钮未直接显示，尝试滚动...")
+                    renew_btn.scroll_into_view_if_needed()
+                    renew_btn.click(timeout=5000)
+                    print("✅ 滚动后点击成功！")
             except Exception as e:
-                # 如果找不到按钮，可能是页面还在加载数据，截图看看
-                print(f"❌ 找不到续费按钮 (可能页面动态数据未加载完): {e}")
-                raise e
-
+                print(f"❌ 找不到按钮: {e}")
+                # 如果没找到，这里不用抛出异常，因为我们已经有截图 04_server_page.png 了
+                # 只要程序不报错退出，后面的 run.yml 就能把截图传上去
+                
         except Exception as e:
-            print(f"❌ 运行出错: {e}")
-            page.screenshot(path="error_screenshot.png", full_page=True)
-            raise e 
+            print(f"❌ 发生严重错误: {e}")
+            page.screenshot(path="99_crash_error.png")
+            raise e
 
         finally:
             browser.close()
 
 if __name__ == "__main__":
-    run_cloud_fast()
+    run_debug_visual()
