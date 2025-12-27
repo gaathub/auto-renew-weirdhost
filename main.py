@@ -11,8 +11,8 @@ TWO_FA_SECRET = os.environ["DIS_SECRET"].replace(" ", "")
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 TARGET_SERVER_URL = "https://hub.weirdhost.xyz/server/10a4aaad"
 
-def run_stable_login():
-    print("🚀 [稳健等待版] 启动...")
+def run_blocking_wait():
+    print("🚀 [死等响应版] 启动...")
     with sync_playwright() as p:
         # 启动浏览器 (Headless模式)
         browser = p.chromium.launch(headless=True)
@@ -27,136 +27,130 @@ def run_stable_login():
 
         try:
             # --- 1. 访问登录页 ---
-            print("1️⃣ 访问登录页...")
+            print("1️⃣ 访问 WeirdHost 登录页...")
             page.goto(LOGIN_URL)
-            # 等待网页骨架加载完
-            page.wait_for_load_state("domcontentloaded")
-            time.sleep(2) # 再多等2秒让脚本缓一缓
+            page.wait_for_load_state("networkidle")
 
+            # 检查是否就在登录页
             if "login" in page.url:
-                print("   -> 检测到登录界面...")
+                print("   -> 正在处理登录前置操作...")
 
-                # --- 步骤 A: 勾选条款 ---
-                print("   -> [A] 勾选条款...")
+                # [A] 勾选条款 (必须确保勾上)
                 try:
-                    # 等待复选框出现
                     checkbox = page.locator("input[type='checkbox']")
                     checkbox.wait_for(state="visible", timeout=10000)
-                    
-                    # 强制勾选
                     if not checkbox.is_checked():
                         checkbox.check(force=True)
-                        print("      已执行勾选")
-                    else:
-                        print("      条款看似已勾选")
-                    
-                    # 🔥 关键：勾选后强制等待 2 秒，防止按钮还没变绿就点击
-                    time.sleep(2) 
-                    
-                except Exception as e:
-                    print(f"   ⚠️ 条款操作警告: {e}")
+                        time.sleep(1) # 等1秒让JS生效
+                except:
+                    print("   ⚠️ 勾选条款时遇到小问题，尝试继续...")
 
-                # --- 步骤 B: 点击 Discord 登录 ---
-                print("   -> [B] 点击 Discord 登录按钮...")
+                # [B] 点击 Discord 登录 (并等待跳转)
+                print("   -> 点击 Discord 按钮，等待跳转...")
                 
-                # 寻找按钮 (优先找链接，其次找文字)
+                # 寻找按钮
                 discord_btn = page.locator("a[href*='discord']").first
                 if not discord_btn.is_visible():
                     discord_btn = page.locator("text=디스코드로 로그인하기").first
                 
-                # 点击按钮
+                # 点击并等待 URL 变成 discord.com
                 discord_btn.click()
-                print("      按钮已点击，等待跳转到 Discord...")
-
-                # 🔥 关键修改：不再用 expect_navigation，而是死等 URL 包含 'discord.com'
-                try:
-                    page.wait_for_url(lambda url: "discord.com" in url or "weirdhost" in url, timeout=30000)
-                    print("   -> ✅ 跳转成功！")
-                except:
-                    print("   ❌ 跳转超时！可能是点击没生效，尝试备用点击方案...")
-                    # 备用：盲点最后一个按钮
-                    page.locator("button, .btn").last.click(force=True)
-                    page.wait_for_url(lambda url: "discord.com" in url, timeout=15000)
-
-                # --- 步骤 C: Discord 流程 ---
-                # 再次确认是否真的在 Discord 页面
-                page.wait_for_load_state("domcontentloaded")
                 
-                if "discord.com" in page.url:
-                    print("2️⃣ Discord 验证流程...")
-                    time.sleep(2) # 等页面元素渲染
+                try:
+                    # 🔥 核心修改：死等 URL 变化，最长等 30秒
+                    page.wait_for_url(lambda url: "discord.com" in url, timeout=30000)
+                    print("   -> ✅ 已成功跳转到 Discord 域名")
+                except:
+                    print("   ❌ 跳转 Discord 超时！可能是按钮没点到，或者网络太慢。")
+                    raise Exception("Failed to reach Discord")
 
-                    # 1. 关掉 APP 弹窗
-                    if page.locator("button:has-text('继续使用')").count() > 0:
-                        page.locator("button:has-text('继续使用')").click()
-                        time.sleep(1)
+                # --- 2. Discord 登录流程 (一步一步死等) ---
+                print("2️⃣ 开始 Discord 身份验证...")
+                page.wait_for_load_state("domcontentloaded")
 
-                    # 2. 填账号
-                    if page.locator("input[name='email']").is_visible():
-                        print("   -> 输入账号...")
-                        page.fill("input[name='email']", DISCORD_EMAIL)
-                        page.fill("input[name='password']", DISCORD_PASSWORD)
-                        page.click("button[type='submit']")
-                        # 等待转圈
-                        try:
-                            page.wait_for_selector("input[autocomplete='one-time-code']", timeout=5000)
-                        except:
-                            time.sleep(3) 
+                # [C] 填写账号 (死等输入框出现)
+                print("   -> 正在寻找账号输入框...")
+                try:
+                    email_input = page.locator("input[name='email']")
+                    # 🔥 核心修改：这里必须等，直到输入框出现在屏幕上
+                    email_input.wait_for(state="visible", timeout=20000)
+                    
+                    print("   -> 输入框已出现，正在填写...")
+                    email_input.fill(DISCORD_EMAIL)
+                    page.fill("input[name='password']", DISCORD_PASSWORD)
+                    page.click("button[type='submit']")
+                    print("   -> 账号密码已提交")
+                except Exception as e:
+                    print(f"   ⚠️ 没有找到账号输入框 (可能已经记住登录了?): {e}")
 
-                    # 3. 填 2FA
-                    if page.locator("input[autocomplete='one-time-code']").count() > 0:
-                        print("   -> 输入 2FA...")
-                        totp = pyotp.TOTP(TWO_FA_SECRET)
-                        page.fill("input[autocomplete='one-time-code']", totp.now())
-                        page.click("button[type='submit']")
-                        time.sleep(3)
+                # [D] 填写 2FA (如果有)
+                try:
+                    # 等待一下看会不会出现 2FA 框
+                    otp_input = page.locator("input[autocomplete='one-time-code']")
+                    # 给它 5 秒钟出现时间
+                    otp_input.wait_for(state="visible", timeout=5000)
+                    
+                    print("   -> 检测到 2FA 请求，正在计算验证码...")
+                    totp = pyotp.TOTP(TWO_FA_SECRET)
+                    otp_input.fill(totp.now())
+                    page.click("button[type='submit']")
+                    print("   -> 2FA 验证码已提交")
+                except:
+                    print("   -> 未检测到 2FA (或已通过)")
 
-                    # 4. 授权
-                    print("   -> 检查授权按钮...")
-                    try:
-                        # 等待授权按钮出现
-                        auth_btn = page.locator("button:has-text('Authorize'), button:has-text('授权'), button:has-text('승인')").last
-                        # 只有按钮可见才点
-                        if auth_btn.is_visible():
-                            auth_btn.click()
-                            print("   -> ✅ 已点击授权")
-                            # 点击后死等跳转回 WeirdHost
-                            page.wait_for_url(lambda url: "weirdhost.xyz" in url, timeout=30000)
-                        else:
-                            print("   -> 未发现授权按钮，可能已自动通过")
-                    except:
-                        pass
+                # [E] 点击授权 (Authorize) - 最容易卡的一步
+                print("   -> 正在等待 '授权' 按钮...")
+                try:
+                    # 查找授权按钮
+                    auth_btn = page.locator("button:has-text('Authorize'), button:has-text('授权'), button:has-text('승인')").last
+                    # 🔥 核心修改：死等授权按钮出现，最长 15秒
+                    auth_btn.wait_for(state="visible", timeout=15000)
+                    # 再次等待 2 秒确保按钮可点击
+                    time.sleep(2)
+                    auth_btn.click()
+                    print("   -> ✅ 已点击 '授权' 按钮")
+                except:
+                    print("   ⚠️ 未找到授权按钮 (可能已自动授权)，继续...")
 
-            # --- 步骤 D: 检查是否登录成功 ---
-            print("3️⃣ 检查登录状态...")
-            page.wait_for_load_state("domcontentloaded")
-            
-            # 如果 URL 里还有 login，说明失败了
+                # --- 3. 等待跳回 ---
+                print("3️⃣ 等待跳转回 WeirdHost 控制台...")
+                try:
+                    # 死等 URL 变回 weirdhost
+                    page.wait_for_url(lambda url: "weirdhost.xyz" in url and "discord" not in url, timeout=40000)
+                    print("   -> 回调成功！")
+                except:
+                    print("   ❌ 跳转回控制台超时！")
+                    page.screenshot(path="callback_timeout.png")
+                    raise Exception("Callback Timeout")
+
+            # --- 4. 验证登录并续费 ---
+            # 此时应该在首页，再次确认不在 login 页面
             if "login" in page.url:
-                print("❌❌❌ 依然在登录页，登录失败！")
-                page.screenshot(path="login_failed_final.png")
-                raise Exception("Login Failed")
+                print("❌❌❌ 依然在登录页！登录流程失败。")
+                page.screenshot(path="login_failed.png")
+                raise Exception("Login Failed Final")
 
-            # --- 步骤 E: 续费 ---
             print(f"4️⃣ 前往服务器页面: {TARGET_SERVER_URL}")
             page.goto(TARGET_SERVER_URL)
+            # 等待服务器页面加载
             page.wait_for_load_state("domcontentloaded")
             
+            # 再次检查 Session
             if "login" in page.url:
-                print("❌❌❌ Session 丢失，被弹回登录页")
-                page.screenshot(path="session_lost.png")
+                print("❌❌❌ Session 丢失，无法访问服务器页。")
                 raise Exception("Session Lost")
 
-            print("5️⃣ 点击续费...")
+            print("5️⃣ 寻找续费按钮...")
             try:
                 # 寻找按钮
                 renew_btn = page.locator("span").filter(has_text="시간추가").first
+                # 死等按钮出现
                 renew_btn.wait_for(state="visible", timeout=20000)
                 renew_btn.scroll_into_view_if_needed()
                 renew_btn.click()
-                print("   -> 按钮已点击")
+                print("   -> ✅ 按钮已点击")
 
-                # 检查结果 (等待错误提示或成功)
+                # 6. 检查结果
                 try:
                     error_msg = page.locator("text=You can't renew")
                     error_msg.wait_for(state="visible", timeout=5000)
@@ -166,6 +160,7 @@ def run_stable_login():
 
             except Exception as e:
                 print(f"❌ 找不到续费按钮: {e}")
+                # 截图方便排查
                 page.screenshot(path="no_button.png")
                 raise e
 
@@ -178,4 +173,4 @@ def run_stable_login():
             browser.close()
 
 if __name__ == "__main__":
-    run_stable_login()
+    run_blocking_wait()
