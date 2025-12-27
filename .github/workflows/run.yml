@@ -1,17 +1,23 @@
-name: Auto Renew Server (Debug)
+name: Auto Renew Server (Font Fix)
 
 on:
-  workflow_dispatch: # 允许手动运行
+  workflow_dispatch:
   schedule:
-    - cron: '0 1 * * *' # 每天自动运行
+    - cron: '0 1 * * *'
 
 jobs:
-  debug_run:
+  fix_font_run:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    # --- 🔥 核心修改：安装中日韩字体 ---
+    - name: Install System Fonts
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y fonts-noto-cjk fonts-noto-cjk-extra
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -30,11 +36,10 @@ jobs:
         DIS_SECRET: ${{ secrets.DIS_SECRET }}
       run: python -u main.py
 
-    # 🔥🔥🔥 新增步骤：上传错误截图 🔥🔥🔥
     - name: Upload error screenshot
-      if: failure()  # ⚠️ 重要：只有当上面的步骤失败（变红）时才运行这一步
+      if: failure()
       uses: actions/upload-artifact@v4
       with:
-        name: error-evidence # 上传后的压缩包名字
-        path: error_screenshot.png # 要上传的文件名
-        retention-days: 3 # 文件只保留3天
+        name: error-evidence
+        path: error_screenshot.png
+        retention-days: 3
