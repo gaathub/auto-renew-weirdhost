@@ -1,20 +1,20 @@
-name: Auto Renew Server
+name: Auto Renew Server (Debug)
 
 on:
-  workflow_dispatch: # 允许你手动点击按钮运行
+  workflow_dispatch: # 允许手动运行
   schedule:
-    - cron: '0 1 * * *' # 每天 UTC 时间 01:00 运行 (相当于北京时间早上9点)
+    - cron: '0 1 * * *' # 每天自动运行
 
 jobs:
-  build:
+  debug_run:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.9'
 
@@ -24,8 +24,17 @@ jobs:
         playwright install chromium
 
     - name: Run script
-      env: # 将 GitHub 里的密码传入脚本
+      env:
         DIS_EMAIL: ${{ secrets.DIS_EMAIL }}
         DIS_PASSWORD: ${{ secrets.DIS_PASSWORD }}
         DIS_SECRET: ${{ secrets.DIS_SECRET }}
       run: python main.py
+
+    # 🔥🔥🔥 新增步骤：上传错误截图 🔥🔥🔥
+    - name: Upload error screenshot
+      if: failure()  # ⚠️ 重要：只有当上面的步骤失败（变红）时才运行这一步
+      uses: actions/upload-artifact@v4
+      with:
+        name: error-evidence # 上传后的压缩包名字
+        path: error_screenshot.png # 要上传的文件名
+        retention-days: 3 # 文件只保留3天
